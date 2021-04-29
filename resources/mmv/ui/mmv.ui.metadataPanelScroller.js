@@ -26,12 +26,14 @@
 	 * @constructor
 	 * @param {jQuery} $container The container for the panel (.mw-mmv-post-image).
 	 * @param {jQuery} $aboveFold The control bar element (.mw-mmv-above-fold).
+	 * @param {jQuery} $wrapper The container for the lightbox (.mw-mmv-wrapper).
 	 * @param {mw.SafeStorage} localStorage the localStorage object, for dependency injection
 	 */
-	function MetadataPanelScroller( $container, $aboveFold, localStorage ) {
+	function MetadataPanelScroller( $container, $aboveFold, $wrapper, localStorage ) {
 		mw.mmv.ui.Element.call( this, $container );
 
 		this.$aboveFold = $aboveFold;
+		this.$wrapper = $wrapper;
 
 		/** @property {mw.SafeStorage} localStorage */
 		this.localStorage = localStorage;
@@ -67,7 +69,7 @@
 			panel.keydown( e );
 		} );
 
-		$( window ).on( 'scroll.mmvp', $.throttle( 250, function () {
+		this.$wrapper.on( 'scroll.mmvp', $.throttle( 250, function () {
 			panel.scroll();
 		} ) );
 
@@ -84,8 +86,9 @@
 
 	MPSP.unattach = function () {
 		this.clearEvents();
-		$( window ).off( 'scroll.mmvp' );
+		this.$wrapper.off( 'scroll.mmvp' );
 		this.$container.off( 'mmv-metadata-open' );
+		this.panelWasOpen = null;
 	};
 
 	MPSP.empty = function () {
@@ -102,14 +105,16 @@
 	 * @return {number}
 	 */
 	MPSP.getScrollTopWhenOpen = function () {
-		return this.$container.outerHeight() - parseInt( this.$aboveFold.css( 'min-height' ), 10 ) -
-			parseInt( this.$aboveFold.css( 'padding-bottom' ), 10 );
+		/* Css rule  margin-top: -86px;  is used to pull up the metadata container (the "above-fold" area) over the image wrapper.
+		 * Minimum scroll (below-fold height) is 20px == the  2*@vertical-padding  of  .mw-mmv-about-links
+		 * $container 's min-height also includes the padding */
+		return Math.max( 20, Math.floor( this.$container.height() + parseInt( this.$container.css( 'margin-top' ) ) ) );
 	};
 
 	/**
 	 * Makes sure the panel does not contract when it is emptied and thus keeps its position as much as possible.
 	 * This should be called when switching images, before the panel is emptied, and should be undone with
-	 * unfreezeHeight after the panel has been populeted with the new metadata.
+	 * unfreezeHeight after the panel has been populated with the new metadata.
 	 */
 	MPSP.freezeHeight = function () {
 		var scrollTop, scrollTopWhenOpen;
@@ -120,10 +125,10 @@
 			return;
 		}
 
-		scrollTop = $( window ).scrollTop();
+		scrollTop = this.$wrapper.scrollTop();
 		scrollTopWhenOpen = this.getScrollTopWhenOpen();
+		this.panelScrollProportion = scrollTop / scrollTopWhenOpen;
 
-		this.panelWasFullyOpen = ( scrollTop === scrollTopWhenOpen );
 		this.$container.css( 'min-height', this.$container.height() );
 	};
 
@@ -135,8 +140,8 @@
 		}
 
 		this.$container.css( 'min-height', '' );
-		if ( this.panelWasFullyOpen ) {
-			$( window ).scrollTop( this.getScrollTopWhenOpen() );
+		if ( this.panelScrollProportion ) {
+			this.$wrapper.scrollTop( this.panelScrollProportion * this.getScrollTopWhenOpen() );
 		}
 	};
 
@@ -176,27 +181,27 @@
 	MPSP.toggle = function ( forceDirection ) {
 		var scrollTopWhenOpen = this.getScrollTopWhenOpen(),
 			scrollTopWhenClosed = 0,
-			scrollTop = $( window ).scrollTop(),
+			scrollTop = this.$wrapper.scrollTop(),
 			panelIsOpen = scrollTop > scrollTopWhenClosed,
 			direction = forceDirection || ( panelIsOpen ? 'down' : 'up' ),
 			scrollTopTarget = ( direction === 'up' ) ? scrollTopWhenOpen : scrollTopWhenClosed;
+
+		mw.log( 'MPSP.toggle("' + forceDirection + '")', 'scrollTop ==', scrollTop, 'scrollTopWhenClosed ==', scrollTopWhenClosed );
+		if ( $( this.$container ).closest( '.jq-fullscreened' ).length > 0 ) { return; }
 
 		// don't log / animate if the panel is already in the end position
 		if ( scrollTopTarget === scrollTop ) {
 			return $.Deferred().resolve().promise();
 		} else {
 			mw.mmv.actionLogger.log( direction === 'up' ? 'metadata-open' : 'metadata-close' );
+
 			if ( direction === 'up' && !panelIsOpen ) {
-				// FIXME nasty. This is not really an event but a command sent to the metadata panel;
-				// child UI elements should not send commands to their parents. However, there is no way
-				// to calculate the target scrollTop accurately without revealing the text, and the event
-				// which does that (metadata-open) is only triggered later in the process, when the panel
-				// actually scrolled, so we cannot use it here without risking triggering it multiple times.
-				this.$container.trigger( 'mmv-metadata-reveal-truncated-text' );
+				// Transition to opened state before scrolling starts only when opening.
+				// Transitioning to closed state is only done when the scroll animation is finished.
+				this.scroll( true );
 				scrollTopTarget = this.getScrollTopWhenOpen();
 			}
-			// eslint-disable-next-line no-jquery/no-global-selector
-			return $( 'html, body' ).animate( { scrollTop: scrollTopTarget }, 'fast' ).promise();
+			return this.$wrapper.animate( { scrollTop: scrollTopTarget }, 'fast' ).promise();
 		}
 	};
 
@@ -211,7 +216,9 @@
 		}
 		switch ( e.which ) {
 			case 40: // Down arrow
-				// fall through
+				this.toggle( 'down' );
+				e.preventDefault();
+				break;
 			case 38: // Up arrow
 				this.toggle();
 				e.preventDefault();
@@ -225,17 +232,19 @@
 	 * @return {boolean}
 	 */
 	MPSP.panelIsOpen = function () {
-		return $( window ).scrollTop() > 0;
+		return this.$wrapper && this.$wrapper.scrollTop() > 0;
 	};
 
 	/**
-	 * Receives the window's scroll events and and turns them into business logic events
+	 * Detects opened/closed state after scroll events and fires the notification event if it changed
+	 *
+	 * @param {boolean} panelIsOpen Force the new state
 	 *
 	 * @fires mmv-metadata-open
 	 * @fires mmv-metadata-close
 	 */
-	MPSP.scroll = function () {
-		var panelIsOpen = this.panelIsOpen();
+	MPSP.scroll = function ( panelIsOpen ) {
+		panelIsOpen = panelIsOpen || this.panelIsOpen();
 
 		if ( panelIsOpen && !this.panelWasOpen ) { // just opened
 			this.$container.trigger( 'mmv-metadata-open' );

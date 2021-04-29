@@ -54,10 +54,6 @@
 
 		bootstrap.processThumbs( $( '#qunit-fixture' ) );
 
-		// MultimediaViewerBootstrap.ensureEventHandlersAreSetUp() is a weird workaround for gadget bugs.
-		// MediaViewer should work without it, and so should the tests.
-		bootstrap.ensureEventHandlersAreSetUp = function () {};
-
 		bootstrap.getViewer = function () {
 			return viewer || { initWithThumbs: function () {}, hash: function () {} };
 		};
@@ -92,30 +88,24 @@
 
 		return mw.mmv.testHelpers.waitForAsync().then( function () {
 			assert.strictEqual( callCount, 1, 'Viewer should be loaded once' );
-			bootstrap.cleanupEventHandlers();
 			location.hash = '';
 		} );
 	}
 
 	QUnit.test( 'Promise does not hang on ResourceLoader errors', function ( assert ) {
 		var bootstrap,
-			errorMessage = 'loading failed',
-			done = assert.async();
+			errorMessage = 'loading failed';
 
+		// Stub mw.loader.using() so it returns a failed promise.
 		this.sandbox.stub( mw.loader, 'using' )
-			.callsArgWith( 2, new Error( errorMessage, [ 'mmv' ] ) )
-			.withArgs( 'mediawiki.notification' ).returns( $.Deferred().reject() ); // needed for mw.notify
+			.returns( $.Deferred().reject( new Error( errorMessage, [ 'mmv' ] ) ) );
 
 		bootstrap = createBootstrap();
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
-		this.sandbox.stub( bootstrap, 'cleanupOverlay' );
 
-		bootstrap.loadViewer( true ).fail( function ( message ) {
-			assert.strictEqual( bootstrap.setupOverlay.called, true, 'Overlay was set up' );
-			assert.strictEqual( bootstrap.cleanupOverlay.called, true, 'Overlay was cleaned up' );
-			assert.strictEqual( message, errorMessage, 'promise is rejected with the error message when loading fails' );
-			done();
-		} );
+		assert.rejects( bootstrap.loadViewer(), function ( rejectReason ) {
+			assert.strictEqual( rejectReason.message, errorMessage, 'Promise is rejected with the proper error message' );
+			return true;
+		}, 'Promise is rejected if there is an error' );
 	} );
 
 	QUnit.test( 'Clicks are not captured once the loading fails', function ( assert ) {
@@ -123,10 +113,9 @@
 			bootstrap = new mw.mmv.MultimediaViewerBootstrap(),
 			clock = this.sandbox.useFakeTimers();
 
+		// Stub mw.loader.using() so it returns a failed promise.
 		this.sandbox.stub( mw.loader, 'using' )
-			.callsArgWith( 2, new Error( 'loading failed', [ 'mmv' ] ) )
-			.withArgs( 'mediawiki.notification' ).returns( $.Deferred().reject() ); // needed for mw.notify
-		bootstrap.ensureEventHandlersAreSetUp = function () {};
+			.returns( $.Deferred().reject( new Error( 'loading failed', [ 'mmv' ] ) ) );
 
 		// trigger first click, which will cause MMV to be loaded (which we've
 		// set up to fail)
@@ -150,7 +139,7 @@
 	// FIXME: Tests suspended as they do not pass in QUnit 2.x+ – T192932
 	QUnit.skip( 'Check viewer invoked when clicking on valid image links', function ( assert ) {
 		// TODO: Is <div class="gallery"><span class="image"><img/></span></div> valid ???
-		var div, $link, $link2, $link3, $link4, $link5, bootstrap,
+		var div, $link, $link2, $link3, $link4, $link5,
 			viewer = { initWithThumbs: function () {}, loadImageByTitle: this.sandbox.stub() },
 			clock = this.sandbox.useFakeTimers();
 
@@ -179,8 +168,6 @@
 		);
 
 		// Create a new bootstrap object to trigger the DOM scan, etc.
-		bootstrap = createBootstrap( viewer );
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
 
 		$link4 = $( '.fullMedia .mw-mmv-view-expanded' );
 		assert.ok( $link4.length, 'Link for viewing expanded file was set up.' );
@@ -191,22 +178,18 @@
 		// Click on valid link
 		$link.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		// FIXME: Actual bootstrap.setupOverlay.callCount: 2
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'setupOverlay called (1st click)' );
 		assert.equal( viewer.loadImageByTitle.callCount, 1, 'loadImageByTitle called (1st click)' );
 		this.sandbox.reset();
 
 		// Click on valid link
 		$link2.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'setupOverlay called (2nd click)' );
 		assert.equal( viewer.loadImageByTitle.callCount, 1, 'loadImageByTitle called (2nd click)' );
 		this.sandbox.reset();
 
 		// Click on valid link
 		$link4.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'setupOverlay called (3rd click)' );
 		assert.equal( viewer.loadImageByTitle.callCount, 1, 'loadImageByTitle called (3rd click)' );
 		this.sandbox.reset();
 
@@ -215,7 +198,6 @@
 		$link4.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
 		mw.config.set( 'wgMediaViewerOnClick', true );
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'setupOverlay called on-click with pref off' );
 		assert.equal( viewer.loadImageByTitle.callCount, 1, 'loadImageByTitle called on-click with pref off' );
 		this.sandbox.reset();
 
@@ -224,7 +206,6 @@
 		// Click on non-valid link
 		$link3.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 0, 'setupOverlay not called on non-valid link click' );
 		assert.equal( viewer.loadImageByTitle.callCount, 0, 'loadImageByTitle not called on non-valid link click' );
 		this.sandbox.reset();
 
@@ -233,7 +214,6 @@
 		$link.trigger( { type: 'click', which: 1 } );
 		$link2.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 0, 'setupOverlay not called on non-valid link click with pref off' );
 		assert.equal( viewer.loadImageByTitle.callCount, 0, 'loadImageByTitle not called on non-valid link click with pref off' );
 
 		clock.restore();
@@ -262,16 +242,12 @@
 
 	// FIXME: Tests suspended as they do not pass in QUnit 2.x+ – T192932
 	QUnit.skip( 'Accept only left clicks without modifier keys, skip the rest', function ( assert ) {
-		var $div, $link, bootstrap,
+		var $div, $link,
 			viewer = { initWithThumbs: function () {}, loadImageByTitle: this.sandbox.stub() },
 			clock = this.sandbox.useFakeTimers();
 
 		// Create gallery with image that has valid name extension
 		$div = createGallery();
-
-		// Create a new bootstrap object to trigger the DOM scan, etc.
-		bootstrap = createBootstrap( viewer );
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
 
 		$link = $div.find( 'a.image' );
 
@@ -279,41 +255,35 @@
 		$link.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
 
-		// FIXME: Actual bootstrap.setupOverlay.callCount: 2
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'Left-click: Set up overlay' );
 		assert.equal( viewer.loadImageByTitle.callCount, 1, 'Left-click: Load image' );
 		this.sandbox.reset();
 
 		// Skip Ctrl-left-click, no image is loaded
 		$link.trigger( { type: 'click', which: 1, ctrlKey: true } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 0, 'Ctrl-left-click: No overlay' );
 		assert.equal( viewer.loadImageByTitle.callCount, 0, 'Ctrl-left-click: No image load' );
 		this.sandbox.reset();
 
 		// Skip invalid right click, no image is loaded
 		$link.trigger( { type: 'click', which: 2 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 0, 'Right-click: No overlay' );
 		assert.equal( viewer.loadImageByTitle.callCount, 0, 'Right-click: Image was not loaded' );
 
 		clock.restore();
 	} );
 
 	QUnit.test( 'Ensure that the correct title is loaded when clicking', function ( assert ) {
-		var bootstrap,
+		var
 			viewer = { initWithThumbs: function () {}, loadImageByTitle: this.sandbox.stub() },
 			$div = createGallery( 'foo.jpg' ),
 			$link = $div.find( 'a.image' ),
 			clock = this.sandbox.useFakeTimers();
 
 		// Create a new bootstrap object to trigger the DOM scan, etc.
-		bootstrap = createBootstrap( viewer );
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
+		createBootstrap( viewer );
 
 		$link.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.ok( bootstrap.setupOverlay.called, 'Overlay was set up' );
 		assert.strictEqual( viewer.loadImageByTitle.firstCall.args[ 0 ].getPrefixedDb(), 'File:Foo.jpg', 'Titles are identical' );
 
 		clock.restore();
@@ -321,7 +291,7 @@
 
 	// FIXME: Tests suspended as they do not pass in QUnit 2.x+ – T192932
 	QUnit.skip( 'Validate new LightboxImage object has sane constructor parameters', function ( assert ) {
-		var bootstrap,
+		var
 			$div,
 			$link,
 			viewer = mw.mmv.testHelpers.getMultimediaViewer(),
@@ -334,8 +304,7 @@
 		$link = $div.find( 'a.image' );
 
 		// Create a new bootstrap object to trigger the DOM scan, etc.
-		bootstrap = createBootstrap( viewer );
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
+		createBootstrap( viewer );
 		this.sandbox.stub( viewer, 'createNewImage' );
 		viewer.loadImage = function () {};
 		viewer.createNewImage = function ( fileLink, filePageLink, fileTitle, index, thumb, caption, alt ) {
@@ -354,7 +323,6 @@
 
 		$link.trigger( { type: 'click', which: 1 } );
 		clock.tick( 10 );
-		assert.equal( bootstrap.setupOverlay.callCount, 1, 'Overlay was set up' );
 
 		clock.reset();
 	} );
@@ -407,11 +375,9 @@
 		location.hash = '#/media/foo';
 
 		bootstrap = createBootstrap();
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
-
 		bootstrap.hash();
 
-		assert.ok( bootstrap.setupOverlay.called, 'Overlay is set up' );
+		assert.notEqual( bootstrap.$overlay, undefined, 'Overlay is set up on hash change' );
 	} );
 
 	QUnit.test( 'Overlay is not set up on an irrelevant hash change', function ( assert ) {
@@ -420,41 +386,32 @@
 		location.hash = '#foo';
 
 		bootstrap = createBootstrap();
-		this.sandbox.stub( bootstrap, 'setupOverlay' );
-		bootstrap.loadViewer();
-		bootstrap.setupOverlay.reset();
-
 		bootstrap.hash();
 
-		assert.strictEqual( bootstrap.setupOverlay.called, false, 'Overlay is not set up' );
+		assert.strictEqual( bootstrap.$overlay, undefined, 'Overlay is not set up' );
 	} );
 
-	QUnit.test( 'Restoring article scroll position', function ( assert ) {
-		var stubbedScrollTop,
+	QUnit.skip( 'Article scroll position is kept', function ( assert ) {
+		var
 			bootstrap = createBootstrap(),
-			$window = $( window ),
+			$body = $( document.body ),
+			scrollPos = 50,
 			done = assert.async();
 
-		this.sandbox.stub( $.fn, 'scrollTop', function ( scrollTop ) {
-			if ( scrollTop !== undefined ) {
-				stubbedScrollTop = scrollTop;
-				return this;
-			} else {
-				return stubbedScrollTop;
-			}
-		} );
+		$body.css( 'min-height', '200vh' );
+		$body.scrollTop( scrollPos );
+		assert.strictEqual( $body.scrollTop(), scrollPos, 'Scroll position was set' );
 
-		$window.scrollTop( 50 );
 		bootstrap.setupOverlay();
-		// Calling this a second time because it can happen in history navigation context
-		bootstrap.setupOverlay();
-		// Clear scrollTop to check it is restored
-		$window.scrollTop( 0 );
+		assert.strictEqual( $body.scrollTop(), scrollPos, 'Scroll position is the same after showing overlay' );
+
 		bootstrap.cleanupOverlay();
+		assert.strictEqual( $body.scrollTop(), scrollPos, 'Scroll position is the same after disabling overlay' );
 
-		// Scroll restoration is on a setTimeout
+		// Wait a tick just to catch if the position is changed to a bad value asynchronously.
 		setTimeout( function () {
-			assert.strictEqual( $( window ).scrollTop(), 50, 'Scroll is correctly reset to original top position' );
+			assert.strictEqual( $body.scrollTop(), scrollPos, 'Scroll position is the same after a tick' );
+			$body.css( 'min-height', null );
 			done();
 		} );
 	} );

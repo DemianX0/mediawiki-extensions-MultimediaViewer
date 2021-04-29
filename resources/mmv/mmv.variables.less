@@ -27,7 +27,7 @@
 @panel-above-fold-background-color: #fff;
 
 // Height of the progress bar
-@progress-bar-height: 14px;
+@progress-bar-height: @metadatabar-below-fold-pushup-height;
 
 // Height of dialogs
 @dialog-height: 350px;
@@ -38,7 +38,14 @@
 
 @dialog-warning-color: #ffd36e;
 
+// Space to leave for the scrollbar on the right. A bit more than Chrome's scrollbar width (13.6px)
+@scrollbar-width: 15px;
+
 // Some button things that get included all over
 @navbutton-width: 18px;
-@buttons-offset-right: 5px;
+@buttons-offset-top: 5px;
+@buttons-offset-right: 5px + @scrollbar-width; // Leave space for scrollbar
+// @buttons-offset-right: 5px;
 @buttons-offset-each-top: 37px;
+@buttons-offset-bottom: @metadatabar-above-fold-height + 40px;
+@buttons-offset-height: 40px;

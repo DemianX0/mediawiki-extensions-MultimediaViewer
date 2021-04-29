@@ -1,3 +1,5 @@
+@import 'mediawiki.mixins';
+
 .mw-mmv-overlay {
 	position: fixed;
 	top: 0;
@@ -5,33 +7,28 @@
 	right: 0;
 	bottom: 0;
 	z-index: 1000;
-	background-color: #000;
+	.transition( background 0.5s ease-out );
+	pointer-events: none;
+}
+
+.mw-mmv-overlay.fade {
+	background-color: rgba( 0, 0, 0, 0.5 );
+	.transition( background 1s linear );
+}
+
+/* Stop the article from scrolling in the background */
+html {
+	overflow: unset;  /* Don't scroll the html -> remove overflow-x: visible; -- moves the scrollbar from body to html */
 }
 
 body.mw-mmv-lightbox-open {
-	overflow-y: auto;
+	overflow: hidden;  /* Don't scroll the body */
+}
 
-	/* stylelint-disable selector-max-id */
-	#mw-page-base,
-	#mw-head-base,
-	#mw-navigation,
-	#content,
-	#footer,
-	#globalWrapper { // monobook
-		/** Stop the article from scrolling in the background - skin-specific but works in any browser */
-		display: none;
-	}
-	/* stylelint-enable selector-max-id */
-
-	> * {
-		/** Stop the article from scrolling in the background - works with any skin but needs modern browser */
-		display: none;
-	}
-
-	> .mw-mmv-overlay,
-	> .mw-mmv-wrapper {
-		display: block;
-	}
+// Scroll the overlay independently, so the document retains scroll position, thus it's no longer necessary, to restore.
+// Bug:  https://phabricator.wikimedia.org/T229484  After closing, browser sometimes scrolls to the top of the page in Firefox 70
+.mw-mmv-wrapper {
+	overflow-y: scroll;  /* Scroll the overlay */
 }
 
 .mw-mmv-filepage-buttons {

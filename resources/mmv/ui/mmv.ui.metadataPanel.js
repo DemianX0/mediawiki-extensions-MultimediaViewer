@@ -29,13 +29,15 @@
 	 * @param {jQuery} $aboveFold The brighter headline of the metadata panel (.mw-mmv-above-fold).
 	 *  Called "aboveFold" for historical reasons, but actually a part of the next sibling of the element
 	 *  is also above the fold (bottom of the screen).
+	 * @param {jQuery} $wrapper The container for the lightbox (.mw-mmv-wrapper).
 	 * @param {mw.SafeStorage} localStorage the localStorage object, for dependency injection
 	 * @param {mw.mmv.Config} config A configuration object.
 	 */
-	function MetadataPanel( $container, $aboveFold, localStorage, config ) {
+	function MetadataPanel( $container, $aboveFold, $wrapper, localStorage, config ) {
 		mw.mmv.ui.Element.call( this, $container );
 
 		this.$aboveFold = $aboveFold;
+		this.$wrapper = $wrapper;
 
 		/** @property {mw.mmv.Config} config - */
 		this.config = config;
@@ -102,8 +104,12 @@
 
 		$( this.$container ).on( 'mmv-metadata-open.mmv-mp mmv-metadata-reveal-truncated-text.mmv-mp', function () {
 			panel.revealTruncatedText();
+			if ( panel.permission.isFullSize() ) {
+				panel.$imageMetadata.addClass( 'mw-mmv-permission-full' );
+			}
 		} ).on( 'mmv-metadata-close.mmv-mp', function () {
 			panel.hideTruncatedText();
+			panel.$imageMetadata.removeClass( 'mw-mmv-permission-full' );
 		} ).on( 'mouseleave.mmv-mp', function () {
 			var duration;
 
@@ -116,11 +122,16 @@
 		} ).on( 'mouseenter.mmv-mp', function () {
 			clearTimeout( panel.panelShrinkTimeout );
 		} ).on( 'mmv-permission-grow.mmv-mp', function () {
-			panel.$permissionLink
-				.text( mw.message( 'multimediaviewer-permission-link-hide' ).text() );
+			panel.$imageMetadata.addClass( 'mw-mmv-permission-full' );
+			panel.scroller.toggle( 'up' );
 		} ).on( 'mmv-permission-shrink.mmv-mp', function () {
-			panel.$permissionLink
-				.text( mw.message( 'multimediaviewer-permission-link' ).text() );
+			panel.$imageMetadata.removeClass( 'mw-mmv-permission-full' );
+		} ).on( 'click', '.mw-mmv-permission-grow', function () {
+			panel.permission.grow();
+			return false;
+		} ).on( 'click', '.mw-mmv-permission-shrink', function () {
+			panel.permission.shrink();
+			return false;
 		} );
 
 		this.handleEvent( 'jq-fullscreen-change.lip', function () {
@@ -140,7 +151,9 @@
 			} )
 			.off( 'click.mmv-mp' );
 
-		$( this.$container ).off( '.mmv-mp' );
+		$( this.$container )
+			.off( '.mmv-mp' )
+			.off( 'click' );
 
 		this.scroller.unattach();
 		this.buttons.unattach();
@@ -155,6 +168,7 @@
 
 		this.description.empty();
 		this.permission.empty();
+		this.$imageMetadata.addClass( 'mw-mmv-permission-empty' );
 
 		this.$title.removeClass( 'error' );
 		this.title.empty();
@@ -162,7 +176,9 @@
 
 		this.$license.empty().prop( 'href', '#' );
 		this.$licenseLi.addClass( 'empty' );
-		this.$permissionLink.hide();
+		if ( this.$licenseLi2 ) {
+			this.$licenseLi2.remove();
+		}
 		this.$restrictions.children().hide();
 
 		this.$filename.empty();
@@ -188,9 +204,7 @@
 	 * @param {mw.SafeStorage} localStorage the localStorage object, for dependency injection
 	 */
 	MPP.initializeHeader = function ( localStorage ) {
-		this.progressBar = new mw.mmv.ui.ProgressBar( this.$aboveFold );
-
-		this.scroller = new mw.mmv.ui.MetadataPanelScroller( this.$container, this.$aboveFold,
+		this.scroller = new mw.mmv.ui.MetadataPanelScroller( this.$container, this.$aboveFold, this.$wrapper,
 			localStorage );
 
 		this.$titleDiv = $( '<div>' )
@@ -239,8 +253,10 @@
 		this.$container.addClass( 'mw-mmv-ttf-ellipsis-container' );
 
 		this.$imageMetadata = $( '<div>' )
-			.addClass( 'mw-mmv-image-metadata' )
+			.addClass( 'mw-mmv-image-metadata mw-mmv-permission-empty' )
 			.appendTo( this.$container );
+
+		this.progressBar = new mw.mmv.ui.ProgressBar( this.$imageMetadata );
 
 		this.$imageMetadataLeft = $( '<div>' )
 			.addClass( 'mw-mmv-image-metadata-column mw-mmv-image-metadata-desc-column' )
@@ -252,7 +268,7 @@
 
 		this.initializeCredit();
 		this.description = new mw.mmv.ui.Description( this.$imageMetadataLeft );
-		this.permission = new mw.mmv.ui.Permission( this.$imageMetadataLeft, this.scroller );
+		this.permission = new mw.mmv.ui.Permission( this.$imageMetadataLeft );
 		this.initializeImageLinks();
 	};
 
@@ -316,8 +332,6 @@
 	 * Initializes the license elements.
 	 */
 	MPP.initializeLicense = function () {
-		var panel = this;
-
 		this.$licenseLi = $( '<li>' )
 			.addClass( 'mw-mmv-license-li empty' )
 			.appendTo( this.$imageLinks );
@@ -336,18 +350,17 @@
 
 		this.$permissionLink = $( '<span>' )
 			.addClass( 'mw-mmv-permission-link mw-mmv-label' )
+			.appendTo( this.$licenseLi );
+
+		$( '<span>' )
+			.addClass( 'mw-mmv-permission-grow' )
 			.text( mw.message( 'multimediaviewer-permission-link' ).text() )
-			.appendTo( this.$licenseLi )
-			.hide()
-			.on( 'click', function () {
-				if ( panel.permission.isFullSize() ) {
-					panel.permission.shrink();
-				} else {
-					panel.permission.grow();
-					panel.scroller.toggle( 'up' );
-				}
-				return false;
-			} );
+			.appendTo( this.$permissionLink );
+
+		$( '<span>' )
+			.addClass( 'mw-mmv-permission-shrink' )
+			.text( mw.message( 'multimediaviewer-permission-link-hide' ).text() )
+			.appendTo( this.$permissionLink );
 	};
 
 	/**
@@ -615,7 +628,7 @@
 	 * @param {string} permission
 	 */
 	MPP.setPermission = function ( permission ) {
-		this.$permissionLink.show();
+		this.$imageMetadata.removeClass( 'mw-mmv-permission-empty' );
 		this.permission.set( permission );
 	};
 
@@ -836,6 +849,13 @@
 		}
 
 		this.setLocationData( imageData );
+
+		if ( this.$licenseLi2 ) {
+			this.$licenseLi2.remove();
+		}
+		this.$licenseLi2 = this.$licenseLi.clone()
+			.addClass( 'mw-mmv-image-links-closed' )
+			.prependTo( this.$imageLinkDiv );
 
 		this.resetTruncatedText();
 		this.scroller.unfreezeHeight();

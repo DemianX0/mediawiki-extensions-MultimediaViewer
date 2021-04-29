@@ -101,7 +101,7 @@
 
 		this.setupCanvasButtons();
 
-		this.panel = new mw.mmv.ui.MetadataPanel( this.$postDiv, this.$aboveFold, this.localStorage, this.config );
+		this.panel = new mw.mmv.ui.MetadataPanel( this.$postDiv, this.$aboveFold, this.$wrapper, this.localStorage, this.config );
 		this.buttons = new mw.mmv.ui.CanvasButtons( this.$preDiv, this.$closeButton, this.$fullscreenButton );
 		this.canvas = new mw.mmv.ui.Canvas( this.$innerWrapper, this.$imageWrapper, this.$wrapper );
 
@@ -133,9 +133,6 @@
 		this.canvas.empty();
 
 		this.buttons.empty();
-
-		this.$main.addClass( 'metadata-panel-is-closed' )
-			.removeClass( 'metadata-panel-is-open' );
 	};
 
 	/**
@@ -161,13 +158,8 @@
 		// If the lightbox is already attached, it means we're doing prev/next, and
 		// we should avoid scrolling the panel
 		if ( !this.attached ) {
-			$( window ).scrollTop( 0 );
+			this.$wrapper.scrollTop( 0 );
 		}
-
-		// Make sure that the metadata is going to be at the bottom when it appears
-		// 83 is the height of the top metadata area. Which can't be measured by
-		// reading the DOM at this point of the execution, unfortunately
-		this.$postDiv.css( 'top', ( $( window ).height() - 83 ) + 'px' );
 
 		// Re-appending the same content can have nasty side-effects
 		// Such as the browser leaving fullscreen mode if the fullscreened element is part of it
@@ -175,18 +167,12 @@
 			return;
 		}
 
-		this.handleEvent( 'keyup', function ( e ) {
-			if ( e.keyCode === 27 && !( e.altKey || e.ctrlKey || e.shiftKey || e.metaKey ) ) {
-				// Escape button pressed
-				ui.unattach();
-			}
-		} );
-
 		this.handleEvent( 'jq-fullscreen-change.lip', function ( e ) {
-			ui.fullscreenChange( e );
+			ui.handleFullscreenChange( e );
 		} );
 
 		this.handleEvent( 'keydown', function ( e ) { ui.keydown( e ); } );
+		this.handleEvent( 'keyup', function ( e ) { ui.keyup( e ); } );
 
 		// mousemove generates a ton of events, which is why we throttle it
 		this.handleEvent( 'mousemove.lip', $.throttle( 250, function ( e ) {
@@ -203,12 +189,6 @@
 
 		$parent = $( parentId || document.body );
 
-		// Clean up fullscreen data because hard-existing fullscreen might have left
-		// jquery.fullscreen unable to remove the class and attribute, since $main wasn't
-		// attached to the DOM anymore at the time the jq-fullscreen-change event triggered
-		this.$main.data( 'isFullscreened', false ).removeClass( 'jq-fullscreened' );
-		this.isFullscreen = false;
-
 		$parent
 			.append(
 				this.$wrapper
@@ -221,10 +201,12 @@
 
 		// cross-communication between panel and canvas, sort of
 		this.$postDiv.on( 'mmv-metadata-open.lip', function () {
-			ui.$main.addClass( 'metadata-panel-is-open' )
+			ui.$main
+				.addClass( 'metadata-panel-is-open' )
 				.removeClass( 'metadata-panel-is-closed' );
 		} ).on( 'mmv-metadata-close.lip', function () {
-			ui.$main.removeClass( 'metadata-panel-is-open' )
+			ui.$main
+				.removeClass( 'metadata-panel-is-open' )
 				.addClass( 'metadata-panel-is-closed' );
 		} );
 		this.$wrapper.on( 'mmv-panel-close-area-click.lip', function () {
@@ -244,6 +226,14 @@
 		// Reset the cursor fading
 		this.fadeStopped();
 
+		// Init closed
+		// .scroll() adds: this.$main.addClass( 'metadata-panel-is-closed' );
+		this.panel.scroller.scroll();
+
+		// Merged from MMVB.setupOverlay()
+		// The added class disables the scrollbar on the body
+		$( document.body ).addClass( 'mw-mmv-lightbox-open' );
+
 		this.attached = true;
 	};
 
@@ -253,13 +243,31 @@
 	LIP.unattach = function () {
 		mw.mmv.actionLogger.log( 'close' );
 
+		if ( this.isFullscreen ) {
+			// Call jquery.fullscreen -- handles different browser apis
+			this.$main.exitFullscreen();
+
+			// Cleanup: our event handlers and elements will be removed by the time the asyncronous 'fullscreenchange' event is fired,
+			// thus handleFullscreenChange() won't be called. Call it now synchronously and also remove jquery's 'jq-fullscreened' class.
+			mw.log( 'LIP.unattach(), isFullscreen -> exitFullscreen();', 'document.fullscreenElement=', document.fullscreenElement, 'jq-fullscreened=', this.$main.hasClass( 'jq-fullscreened' ) );
+			this.$main.removeClass( 'jq-fullscreened' );
+			this.handleFullscreenChange( { fullscreen: undefined, element: null } );
+		}
+
+		this.$main
+			.removeClass( 'metadata-panel-is-closed' )
+			.removeClass( 'metadata-panel-is-open' );
+
+		// Merged from MMVB.cleanupOverlay()
+		// Removing this class enables scrolling on the body
+		$( document.body ).removeClass( 'mw-mmv-lightbox-open' );
+
 		// We trigger this event on the document because unattach() can run
 		// when the interface is unattached
 		// We're calling this before cleaning up (below) the DOM, as that
 		// appears to have an impact on automatic scroll restoration (which
 		// might happen as a result of this being closed) in FF
-		$( document ).trigger( $.Event( 'mmv-close' ) )
-			.off( 'jq-fullscreen-change.lip' );
+		$( document ).off( 'jq-fullscreen-change.lip' );
 
 		// Has to happen first so that the scroller can freeze with visible elements
 		this.panel.unattach();
@@ -296,18 +304,18 @@
 	};
 
 	/**
-	 * Exits fullscreen mode.
+	 * Toggles fullscreen mode.
+	 *
+	 * //@param {jQuery.Event} e The keyup or mouseclick event triggering fullscreen toggle.
 	 */
-	LIP.exitFullscreen = function () {
-		this.fullscreenButtonJustPressed = true;
-		this.$main.exitFullscreen();
-	};
-
-	/**
-	 * Enters fullscreen mode.
-	 */
-	LIP.enterFullscreen = function () {
-		this.$main.enterFullscreen();
+	LIP.toggleFullscreen = function ( /* e */ ) {
+		mw.log( 'LIP.toggleFullscreen() BEFORE', 'this.isFullscreen=', this.isFullscreen );
+		if ( this.isFullscreen ) {
+			this.$main.exitFullscreen();
+		} else {
+			this.$main.enterFullscreen();
+		}
+		mw.log( 'LIP.toggleFullscreen() AFTER', 'this.isFullscreen=', this.isFullscreen );
 	};
 
 	/**
@@ -326,10 +334,8 @@
 				gravity: this.correctEW( 'ne' )
 			} )
 			.on( 'click', function () {
-				if ( ui.isFullscreen ) {
-					ui.$main.trigger( $.Event( 'jq-fullscreen-change.lip' ) );
-				}
-				ui.unattach();
+				// ui.unattach() call refactored from close button and key event handlers to viewer.close()
+				ui.$container.trigger( $.Event( 'mmv-close' ) );
 			} );
 
 		this.$fullscreenButton = $( '<button>' )
@@ -340,22 +346,7 @@
 				delayIn: tooltipDelay,
 				gravity: this.correctEW( 'ne' )
 			} )
-			.on( 'click', function ( e ) {
-				if ( ui.isFullscreen ) {
-					ui.exitFullscreen();
-
-					// mousemove is throttled and the mouse coordinates only
-					// register every 250ms, so there is a chance that we moved
-					// our mouse over one of the buttons but it didn't register,
-					// and a fadeOut is triggered; when we're coming back from
-					// fullscreen, we'll want to make sure the mouse data is
-					// current so that the fadeOut behavior will not trigger
-					ui.mousePosition = { x: e.pageX, y: e.pageY };
-					ui.buttons.revealAndFade( ui.mousePosition );
-				} else {
-					ui.enterFullscreen();
-				}
-			} );
+			.on( 'click', function ( e ) { ui.toggleFullscreen( e ); } );
 
 		// If the browser doesn't support fullscreen mode, hide the fullscreen button
 		// This horrendous hack comes from jquery.fullscreen.js
@@ -369,9 +360,11 @@
 	/**
 	 * Handle a fullscreen change event.
 	 *
-	 * @param {jQuery.Event} e The fullscreen change event.
+	 * @param {jQuery.Event} e The fullscreen change event from jquery.fullscreen.
 	 */
-	LIP.fullscreenChange = function ( e ) {
+	LIP.handleFullscreenChange = function ( e ) {
+		mw.log( 'LIP.handleFullscreenChange()', 'isFullscreen=', this.isFullscreen, '->', e.fullscreen, 'attached=', this.currentlyAttached );
+
 		this.isFullscreen = e.fullscreen;
 
 		if ( this.isFullscreen ) {
@@ -386,13 +379,6 @@
 			this.$fullscreenButton
 				.prop( 'title', mw.message( 'multimediaviewer-fullscreen-popup-text' ).text() )
 				.attr( 'alt', mw.message( 'multimediaviewer-fullscreen-popup-text' ).text() );
-		}
-
-		if ( !this.fullscreenButtonJustPressed && !e.fullscreen ) {
-			// Close the interface all the way if the user pressed 'esc'
-			this.unattach();
-		} else if ( this.fullscreenButtonJustPressed ) {
-			this.fullscreenButtonJustPressed = false;
 		}
 
 		// Fullscreen change events can happen after unattach(), in which
@@ -410,6 +396,8 @@
 			// by updateControls which is called a few times when fullscreen opens)
 			this.mousePosition = { x: 0, y: 0 };
 			this.buttons.fadeOut();
+		} else {
+			this.buttons.stopFade();
 		}
 
 		// Some browsers only send resize events before toggling fullscreen, but not once the toggling is done
@@ -446,6 +434,31 @@
 				}
 
 				e.preventDefault();
+				break;
+		}
+	};
+
+	/**
+	 * Handles keyup events on the document
+	 *
+	 * @param {jQuery.Event} e The jQuery keypress event object
+	 */
+	LIP.keyup = function ( e ) {
+		if ( e.altKey || e.shiftKey || e.ctrlKey || e.metaKey ) {
+			return;
+		}
+
+		switch ( e.which ) {
+			case 27: // Key ESC - Escape
+				/* TODO: decide whether to only exit fullscreen
+				if ( this.isFullscreen ) { this.toggleFullscreen( e ); break; }
+				*/
+				// Close mediaviewer
+				// ui.unattach() call refactored from close button and key event handlers to viewer.close()
+				this.$container.trigger( $.Event( 'mmv-close' ) );
+				break;
+			case 70: // Key F
+				this.toggleFullscreen( e );
 				break;
 		}
 	};
@@ -500,12 +513,6 @@
 	 */
 	LIP.updateControls = function ( showPrevButton, showNextButton ) {
 		var prevNextTop = ( ( this.$imageWrapper.height() / 2 ) - 60 ) + 'px';
-
-		if ( this.$main.data( 'isFullscreened' ) ) {
-			this.$postDiv.css( 'top', '' );
-		} else {
-			this.$postDiv.css( 'top', this.$imageWrapper.height() );
-		}
 
 		this.buttons.setOffset( prevNextTop );
 		this.buttons.toggle( showPrevButton, showNextButton );

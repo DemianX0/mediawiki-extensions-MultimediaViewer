@@ -22,24 +22,34 @@
 		}
 	} ) );
 
+	function mockScroller( localStorage ) {
+		/* eslint-disable no-jquery/no-parse-html-literal */
+		var $wrapper = $( '#qunit-fixture' ).addClass( 'mw-mmv-wrapper' ),
+			$main = $( '<div class="mw-mmv-main"><div class="mw-mmv-image-wrapper"></div></div>' ).appendTo( $wrapper ),
+			$container = $( '<div class="mw-mmv-post-image">' ).appendTo( $main ),
+			scroller = new mw.mmv.ui.MetadataPanelScroller( $container, $( '<div>' ).appendTo( $container ), $wrapper, localStorage );
+		return scroller;
+	}
+
 	QUnit.test( 'empty()', function ( assert ) {
-		var $qf = $( '#qunit-fixture' ),
+		var
 			localStorage = mw.mmv.testHelpers.getFakeLocalStorage(),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $qf, $( '<div>' ).appendTo( $qf ), localStorage );
+			scroller = mockScroller( localStorage );
 
 		scroller.empty();
 		assert.strictEqual( scroller.$container.hasClass( 'invite' ), false, 'We successfully reset the invite' );
 	} );
 
 	QUnit.test( 'Metadata div is only animated once', function ( assert ) {
-		var $qf = $( '#qunit-fixture' ),
+		var
 			displayCount = null, // pretend it doesn't exist at first
 			localStorage = mw.mmv.testHelpers.createLocalStorage( {
 				// We simulate localStorage to avoid test side-effects
 				getItem: function () { return displayCount; },
 				setItem: function ( _, val ) { displayCount = val; }
 			} ),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $qf, $( '<div>' ).appendTo( $qf ), localStorage );
+			scroller = mockScroller( localStorage ),
+			$container = scroller.$container;
 
 		scroller.attach();
 
@@ -47,15 +57,15 @@
 
 		assert.ok( scroller.hasAnimatedMetadata,
 			'The first call to animateMetadataOnce set hasAnimatedMetadata to true' );
-		assert.ok( $qf.hasClass( 'invite' ),
+		assert.ok( $container.hasClass( 'invite' ),
 			'The first call to animateMetadataOnce led to an animation' );
 
-		$qf.removeClass( 'invite' );
+		$container.removeClass( 'invite' );
 
 		scroller.animateMetadataOnce();
 
 		assert.strictEqual( scroller.hasAnimatedMetadata, true, 'The second call to animateMetadataOnce did not change the value of hasAnimatedMetadata' );
-		assert.strictEqual( $qf.hasClass( 'invite' ), false,
+		assert.strictEqual( $container.hasClass( 'invite' ), false,
 			'The second call to animateMetadataOnce did not lead to an animation' );
 
 		scroller.unattach();
@@ -63,16 +73,16 @@
 		scroller.attach();
 
 		scroller.animateMetadataOnce();
-		assert.ok( $qf.hasClass( 'invite' ),
+		assert.ok( $container.hasClass( 'invite' ),
 			'After closing and opening the viewer, the panel is animated again' );
 
 		scroller.unattach();
 	} );
 
 	QUnit.test( 'No localStorage', function ( assert ) {
-		var $qf = $( '#qunit-fixture' ),
+		var
 			localStorage = mw.mmv.testHelpers.getUnsupportedLocalStorage(),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $qf, $( '<div>' ).appendTo( $qf ), localStorage );
+			scroller = mockScroller( localStorage );
 
 		this.sandbox.stub( $.fn, 'scrollTop', function () { return 10; } );
 
@@ -82,12 +92,12 @@
 	} );
 
 	QUnit.test( 'localStorage is full', function ( assert ) {
-		var $qf = $( '#qunit-fixture' ),
+		var
 			localStorage = mw.mmv.testHelpers.createLocalStorage( {
 				getItem: this.sandbox.stub().returns( null ),
 				setItem: this.sandbox.stub().throwsException( 'I am full' )
 			} ),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $qf, $( '<div>' ).appendTo( $qf ), localStorage );
+			scroller = mockScroller( localStorage );
 
 		this.sandbox.stub( $.fn, 'scrollTop', function () { return 10; } );
 
@@ -115,7 +125,7 @@
 	function stubScrollFunctions( sandbox, scroller ) {
 		var memorizedScrollTop = 0;
 
-		sandbox.stub( $.fn, 'scrollTop', function ( scrollTop ) {
+		scroller.$wrapper.scrollTop = function ( scrollTop ) {
 			if ( scrollTop !== undefined ) {
 				memorizedScrollTop = scrollTop;
 				scroller.scroll();
@@ -123,26 +133,23 @@
 			} else {
 				return memorizedScrollTop;
 			}
-		} );
-		sandbox.stub( $.fn, 'animate', function ( props ) {
+		};
+		scroller.$wrapper.animate = function ( props ) {
 			if ( 'scrollTop' in props ) {
 				memorizedScrollTop = props.scrollTop;
 				scroller.scroll();
 			}
 			return this;
-		} );
+		};
 	}
 
 	QUnit.test( 'Metadata scrolling', function ( assert ) {
-		var $window = $( window ),
-			$qf = $( '#qunit-fixture' ),
-			$container = $( '<div>' ).css( 'height', 100 ).appendTo( $qf ),
-			$aboveFold = $( '<div>' ).css( 'height', 50 ).appendTo( $container ),
+		var
 			fakeLocalStorage = mw.mmv.testHelpers.createLocalStorage( {
 				getItem: this.sandbox.stub().returns( null ),
 				setItem: function () {}
 			} ),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $container, $aboveFold, fakeLocalStorage ),
+			scroller = mockScroller( fakeLocalStorage ),
 			keydown = $.Event( 'keydown' );
 
 		stubScrollFunctions( this.sandbox, scroller );
@@ -155,7 +162,7 @@
 
 		scroller.attach();
 
-		assert.strictEqual( $window.scrollTop(), 0, 'scrollTop should be set to 0' );
+		assert.strictEqual( scroller.$wrapper.scrollTop(), 0, 'scrollTop should be set to 0' );
 
 		assert.strictEqual( fakeLocalStorage.store.setItem.called, false, 'The metadata hasn\'t been open yet, no entry in localStorage' );
 
@@ -167,7 +174,7 @@
 		keydown.which = 40; // Down arrow
 		scroller.keydown( keydown );
 
-		assert.strictEqual( $window.scrollTop(), 0,
+		assert.strictEqual( scroller.$wrapper.scrollTop(), 0,
 			'scrollTop should be set to 0 after pressing down arrow' );
 
 		// Unattach lightbox from document
@@ -178,27 +185,25 @@
 		scroller.attach();
 
 		// To make sure that the details are out of view, the lightbox is supposed to scroll to the top when open
-		assert.strictEqual( $window.scrollTop(), 0, 'Page scrollTop should be set to 0' );
+		assert.strictEqual( scroller.$wrapper.scrollTop(), 0, 'Page scrollTop should be set to 0' );
 
 		// Scroll down to check that the scrollTop memory doesn't affect prev/next (bug 59861)
-		$window.scrollTop( 20 );
+		scroller.$wrapper.scrollTop( 20 );
 		this.clock.tick( 100 );
 
 		// This extra attach() call simulates the effect of prev/next seen in bug 59861
 		scroller.attach();
 
 		// The lightbox was already open at this point, the scrollTop should be left untouched
-		assert.strictEqual( $window.scrollTop(), 20, 'Page scrollTop should be set to 20' );
+		assert.strictEqual( scroller.$wrapper.scrollTop(), 20, 'Page scrollTop should be set to 20' );
 
 		scroller.unattach();
 	} );
 
 	QUnit.test( 'Metadata scroll logging', function ( assert ) {
-		var $qf = $( '#qunit-fixture' ),
-			$container = $( '<div>' ).css( 'height', 100 ).appendTo( $qf ),
-			$aboveFold = $( '<div>' ).css( 'height', 50 ).appendTo( $container ),
+		var
 			localStorage = mw.mmv.testHelpers.getFakeLocalStorage(),
-			scroller = new mw.mmv.ui.MetadataPanelScroller( $container, $aboveFold, localStorage ),
+			scroller = mockScroller( localStorage ),
 			keydown = $.Event( 'keydown' );
 
 		stubScrollFunctions( this.sandbox, scroller );
@@ -208,25 +213,25 @@
 		keydown.which = 38; // Up arrow
 		scroller.keydown( keydown );
 
-		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-open' ), true, 'Opening keypress logged' );
+		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-open' ), true, 'Opening keypress logged 1' );
 		mw.mmv.actionLogger.log.reset();
 
 		keydown.which = 38; // Up arrow
 		scroller.keydown( keydown );
 
-		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-close' ), true, 'Closing keypress logged' );
+		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-close' ), true, 'Closing keypress logged 1' );
+		mw.mmv.actionLogger.log.reset();
+
+		keydown.which = 38; // Up arrow
+		scroller.keydown( keydown );
+
+		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-open' ), true, 'Opening keypress logged 2' );
 		mw.mmv.actionLogger.log.reset();
 
 		keydown.which = 40; // Down arrow
 		scroller.keydown( keydown );
 
-		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-open' ), true, 'Opening keypress logged' );
-		mw.mmv.actionLogger.log.reset();
-
-		keydown.which = 40; // Down arrow
-		scroller.keydown( keydown );
-
-		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-close' ), true, 'Closing keypress logged' );
+		assert.strictEqual( mw.mmv.actionLogger.log.calledWithExactly( 'metadata-close' ), true, 'Closing keypress logged 2' );
 		mw.mmv.actionLogger.log.reset();
 	} );
 }() );

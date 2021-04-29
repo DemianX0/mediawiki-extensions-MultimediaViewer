@@ -28,9 +28,8 @@
 	 * @extends mw.mmv.ui.Element
 	 * @constructor
 	 * @param {jQuery} $container
-	 * @param {mw.mmv.ui.MetadataPanelScroller} scroller
 	 */
-	function Permission( $container, scroller ) {
+	function Permission( $container ) {
 		var permission = this;
 
 		mw.mmv.ui.Element.call( this, $container );
@@ -44,7 +43,7 @@
 		 * @property {jQuery}
 		 */
 		this.$box = $( '<div>' )
-			.addClass( 'mw-mmv-permission-box mw-mmv-info-box empty' )
+			.addClass( 'mw-mmv-permission-box mw-mmv-info-box' )
 			.appendTo( this.$container );
 
 		/**
@@ -69,7 +68,6 @@
 			.on( 'click', '.mw-mmv-permission-text-viewmore', function ( e ) {
 				e.preventDefault();
 				permission.grow();
-				permission.scroller.toggle( 'up' );
 			} );
 
 		/**
@@ -107,13 +105,6 @@
 				permission.shrink();
 			} )
 			.appendTo( this.$box );
-
-		/**
-		 * Panel scroller from the metadata panel object.
-		 *
-		 * @property {mw.mmv.ui.MetadataPanelScroller}
-		 */
-		this.scroller = scroller;
 	}
 	OO.inheritClass( Permission, mw.mmv.ui.Element );
 	P = Permission.prototype;
@@ -122,7 +113,7 @@
 	 * Clear everything
 	 */
 	P.empty = function () {
-		this.$box.addClass( 'empty' );
+		if ( this.isFullSize() ) { this.shrink(); }
 		this.$text.empty();
 		this.$html.empty();
 	};
@@ -133,8 +124,6 @@
 	 * @param {string} permission the text or HTML code written by the image author
 	 */
 	P.set = function ( permission ) {
-		this.$box.removeClass( 'empty' );
-
 		this.$text.html( this.htmlUtils.htmlToTextWithLinks( permission ) );
 		this.$text.append( this.$fader );
 
@@ -166,6 +155,17 @@
 	P.shrink = function () {
 		this.$box.removeClass( 'full-size' );
 		this.$container.trigger( 'mmv-permission-shrink' );
+	};
+
+	/**
+	 * Toggle the size of the box.
+	 */
+	P.toggle = function () {
+		if ( this.isFullSize() ) {
+			this.shrink();
+		} else {
+			this.grow();
+		}
 	};
 
 	/**

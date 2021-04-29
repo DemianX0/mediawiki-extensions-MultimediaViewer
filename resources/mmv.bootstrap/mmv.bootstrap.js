@@ -65,66 +65,63 @@
 
 	/**
 	 * Loads the mmv module asynchronously and passes the thumb data to it
+	 * loadViewer() is called on every click and hash change
 	 *
-	 * @param {boolean} [setupOverlay]
+	 * @param {Function} afterLoadTask Callback to execute when the viewer is loaded and initialized
 	 * @return {jQuery.Promise}
 	 */
-	MMVB.loadViewer = function ( setupOverlay ) {
-		var deferred = $.Deferred(),
-			bs = this,
-			viewer,
-			message;
+	MMVB.loadViewer = function ( afterLoadTask ) {
+		var promise,
+			notifyMsg,
+			bs = this;
 
 		// Don't load if someone has specifically stopped us from doing so
 		if ( mw.config.get( 'wgMediaViewer' ) !== true ) {
-			return deferred.reject();
+			return $.Deferred().reject();
 		}
 
-		// FIXME setupOverlay is a quick hack to avoid setting up and immediately
-		// removing the overlay on a not-MMV -> not-MMV hash change.
-		// loadViewer is called on every click and hash change and setting up
-		// the overlay is not needed on all of those; this logic really should
-		// not be here.
-		if ( setupOverlay ) {
-			bs.setupOverlay();
-		}
+		// Fade the content while loading
+		this.setupOverlay();
 
-		mw.loader.using( 'mmv', function () {
-			try {
-				viewer = bs.getViewer();
-			} catch ( e ) {
-				message = e.message;
+		promise = mw.loader.using( 'mmv' ).then(
+			function () {
+				// MediaViewer module is loaded
+				var viewer = bs.getViewer();
+				// viewer is constructed
+				if ( !bs.viewerInitialized ) {
+					if ( bs.thumbs.length ) {
+						viewer.initWithThumbs( bs.thumbs );
+					}
+					bs.viewerInitialized = true;
+				}
+				return viewer;
+			}
+		).fail(
+			function ( e ) {
+				// Failed to load MediaViewer module or to construct the viewer
+				bs.viewerIsBroken = true;
+				notifyMsg = 'Error loading MediaViewer: ';
+				return $.Deferred().reject( e );
+			}
+		).then( afterLoadTask ).fail(
+			function ( e ) {
+				// Failed to load image or MediaViewer
+				var message = e.message || e;
+
+				notifyMsg = notifyMsg || 'Error loading image: ';
+				mw.notify( notifyMsg + message );
+
 				if ( e.stack ) {
 					message += '\n' + e.stack;
 				}
-				deferred.reject( message );
-				return;
+				mw.log.warn( message );
+
+				bs.cleanupOverlay();
+				return $.Deferred().reject( message );
 			}
-			deferred.resolve( viewer );
-		}, function ( error ) {
-			deferred.reject( error.message );
-		} );
+		);
 
-		return deferred.promise()
-			.then(
-				function ( viewer2 ) {
-					if ( !bs.viewerInitialized ) {
-						if ( bs.thumbs.length ) {
-							viewer2.initWithThumbs( bs.thumbs );
-						}
-
-						bs.viewerInitialized = true;
-					}
-					return viewer2;
-				},
-				function ( message2 ) {
-					mw.log.warn( message2 );
-					bs.cleanupOverlay();
-					bs.viewerIsBroken = true;
-					mw.notify( 'Error loading MediaViewer: ' + message2 );
-					return $.Deferred().reject( message2 );
-				}
-			);
+		return promise;
 	};
 
 	/**
@@ -423,10 +420,8 @@
 			mw.mmv.actionLogger.log( 'enlarge' );
 		}
 
-		this.ensureEventHandlersAreSetUp();
-
-		return this.loadViewer( true ).then( function ( viewer ) {
-			viewer.loadImageByTitle( title, false );
+		return this.loadViewer( function ( viewer ) {
+			return viewer.loadImageByTitle( title, false );
 		} );
 	};
 
@@ -480,25 +475,30 @@
 	 * @param {boolean} initialHash Whether this is called for the hash that came with the pageload
 	 */
 	MMVB.hash = function ( initialHash ) {
-		var bootstrap = this;
+		mw.log( 'MMVB.hash(' + initialHash + ')', 'current hash:', document.location.hash );
 
 		// There is no point loading the mmv if it isn't loaded yet for hash changes unrelated to the mmv
 		// Such as anchor links on the page
-		if ( !this.viewerInitialized && !this.isViewerHash() ) {
+		if ( !this.isViewerHash() ) {
+			if ( this.viewerInitialized ) {
+				// Close viewer if the hash is not for a media file
+				this.viewer.router.checkRoute();
+			}
 			return;
 		}
 
-		this.loadViewer( this.isViewerHash() ).then( function ( viewer ) {
+		this.loadViewer( function ( viewer ) {
+			viewer.openedByPageLoadHash = initialHash;
 			viewer.router.checkRoute();
-			// this is an ugly temporary fix to avoid a black screen of death when
-			// the page is loaded with an invalid MMV url
-			if ( !viewer.isOpen ) {
-				bootstrap.cleanupOverlay();
-			} else if ( initialHash ) {
-				mw.mmv.actionLogger.log( 'hash-load' );
-			} else {
-				mw.mmv.actionLogger.log( 'history-navigation' );
+			viewer.openedByPageLoadHash = undefined;
+			if ( viewer.isOpen ) {
+				if ( initialHash ) {
+					mw.mmv.actionLogger.log( 'hash-load' );
+				} else {
+					mw.mmv.actionLogger.log( 'history-navigation' );
+				}
 			}
+			return viewer.loadTask;
 		} );
 	};
 
@@ -518,85 +518,54 @@
 	};
 
 	/**
-	 * Listens to events on the window/document
-	 */
-	MMVB.setupEventHandlers = function () {
-		var self = this;
-
-		/** @property {boolean} eventHandlersHaveBeenSetUp tracks domready event handler state */
-		this.eventHandlersHaveBeenSetUp = true;
-
-		// Interpret any hash that might already be in the url
-		self.hash( true );
-
-		$( document ).on( 'mmv-setup-overlay', function () {
-			self.setupOverlay();
-		} ).on( 'mmv-cleanup-overlay', function () {
-			self.cleanupOverlay();
-		} );
-	};
-
-	/**
-	 * Cleans up event handlers, used for tests
-	 */
-	MMVB.cleanupEventHandlers = function () {
-		$( document ).off( 'mmv-setup-overlay mmv-cleanup-overlay' );
-		this.eventHandlersHaveBeenSetUp = false;
-	};
-
-	/**
-	 * Makes sure event handlers are set up properly via MultimediaViewerBootstrap.setupEventHandlers().
-	 * Called before loading the main mmv module. At this point, event handers for MultimediaViewerBootstrap
-	 * should have been set up, but due to bug 70756 it cannot be guaranteed.
-	 */
-	MMVB.ensureEventHandlersAreSetUp = function () {
-		if ( !this.eventHandlersHaveBeenSetUp ) {
-			this.setupEventHandlers();
-		}
-	};
-
-	/**
 	 * Sets up the overlay while the viewer loads
 	 */
 	MMVB.setupOverlay = function () {
-		var $body = $( document.body );
-
-		// There are situations where we can call setupOverlay while the overlay is already there,
-		// such as inside this.hash(). In that case, do nothing
-		if ( $body.hasClass( 'mw-mmv-lightbox-open' ) ) {
-			return;
-		}
+		var $body = $( document.body ),
+			bs = this;
 
 		if ( !this.$overlay ) {
 			this.$overlay = $( '<div>' )
 				.addClass( 'mw-mmv-overlay' );
 		}
 
-		this.savedScrollTop = $( window ).scrollTop();
+		// Add overlay element to DOM.
+		$body.append( this.$overlay );
 
-		$body.addClass( 'mw-mmv-lightbox-open' )
-			.append( this.$overlay );
+		if ( this.fadeTimeout ) {
+			clearTimeout( this.fadeTimeout );
+		}
+		// Start fade one tick after the element is added to the DOM. Fades out in 1s.
+		this.fadeTimeout = setTimeout( function () {
+			bs.$overlay.addClass( 'fade' );
+			bs.fadeTimeout = null;
+		} );
+
+		$( document ).on( 'mmv-close.bootstrap', function () {
+			bs.cleanupOverlay();
+		} );
 	};
 
 	/**
 	 * Cleans up the overlay
 	 */
 	MMVB.cleanupOverlay = function () {
-		var bootstrap = this;
+		var bs = this;
 
-		$( document.body ).removeClass( 'mw-mmv-lightbox-open' );
+		// Fade transition back to 100% opacity is 0.25s.
+		this.$overlay.removeClass( 'fade' );
 
-		if ( this.$overlay ) {
-			this.$overlay.remove();
+		if ( this.fadeTimeout ) {
+			clearTimeout( this.fadeTimeout );
 		}
+		// Remove overlay after 1s.
+		this.fadeTimeout = setTimeout( function () {
+			bs.$overlay.remove();
+			bs.$overlay = null;
+			bs.fadeTimeout = null;
+		}, 1000 );
 
-		if ( this.savedScrollTop !== undefined ) {
-			// setTimeout because otherwise Chrome will scroll back to top after the popstate event handlers run
-			setTimeout( function () {
-				$( window ).scrollTop( bootstrap.savedScrollTop );
-				bootstrap.savedScrollTop = undefined;
-			} );
-		}
+		$( document ).off( 'mmv-close.bootstrap' );
 	};
 
 	MMVB.whenThumbsReady = function () {

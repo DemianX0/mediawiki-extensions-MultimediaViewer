@@ -14,6 +14,9 @@
 		setup: function () {
 			// animation would keep running, conflict with other tests
 			this.sandbox.stub( $.fn, 'animate' ).returnsThis();
+		},
+		tearDown: function () {
+			$.fn.animate.restore();
 		}
 	} ) );
 
@@ -111,32 +114,32 @@
 		// Entering fullscreen
 		lightbox.$fullscreenButton.trigger( 'click' );
 
+		assert.strictEqual( lightbox.isFullscreen, true, "Lightbox knows it's in fullscreen mode after clicking the fullscreenButton 1st time" );
 		assert.strictEqual( lightbox.$main.hasClass( 'jq-fullscreened' ), true,
-			'Fullscreened area has the fullscreen class' );
-		assert.strictEqual( lightbox.isFullscreen, true, 'Lightbox knows it\'s in fullscreen mode' );
+			'Fullscreened area has the `jq-fullscreened` class after clicking the fullscreenButton 1st time' );
 
 		// Exiting fullscreen
 		lightbox.$fullscreenButton.trigger( 'click' );
 
+		assert.strictEqual( lightbox.isFullscreen, false, "Lightbox knows it's NOT in fullscreen mode after clicking the fullscreenButton 2nd time" );
 		assert.strictEqual( lightbox.$main.hasClass( 'jq-fullscreened' ), false,
-			'Fullscreened area doesn\'t have the fullscreen class anymore' );
-		assert.strictEqual( lightbox.isFullscreen, false, 'Lightbox knows it\'s not in fullscreen mode' );
+			'Fullscreened area does NOT have the `jq-fullscreened` class after clicking the fullscreenButton 2nd time' );
 
 		// Entering fullscreen
 		lightbox.$fullscreenButton.trigger( 'click' );
 
+		assert.strictEqual( lightbox.isFullscreen, true, "Lightbox knows it's NOT in fullscreen mode after clicking the fullscreenButton 3rd time" );
+		assert.strictEqual( lightbox.$main.hasClass( 'jq-fullscreened' ), true,
+			'Fullscreened area has the `jq-fullscreened` class after clicking the fullscreenButton 3rd time' );
+
 		// Hard-exiting fullscreen
-		lightbox.$closeButton.trigger( 'click' );
-
-		// Re-attach after hard-exit
-		lightbox.attach( '#qunit-fixture' );
-
-		assert.strictEqual( lightbox.$main.hasClass( 'jq-fullscreened' ), false,
-			'Fullscreened area doesn\'t have the fullscreen class anymore' );
-		assert.strictEqual( lightbox.isFullscreen, false, 'Lightbox knows it\'s not in fullscreen mode' );
-
-		// Unattach lightbox from document
+		// lightbox.$closeButton.trigger( 'click' ); // event 'mmv-close.mmvp' is not handled in this mockup
 		lightbox.unattach();
+
+		// ui.unattach() calls handleFullscreenChange() with `e.fullscreen == undefined`, thus isFullscreen will be set to `undefined`
+		assert.strictEqual( lightbox.isFullscreen, undefined, "Lightbox knows it's NOT in fullscreen mode after hard-exit" );
+		assert.strictEqual( lightbox.$main.hasClass( 'jq-fullscreened' ), false,
+			'Fullscreened area does NOT have the `jq-fullscreened` class after hard-exit' );
 
 		$.fn.enterFullscreen = oldFnEnterFullscreen;
 		$.fn.exitFullscreen = oldFnExitFullscreen;
@@ -168,7 +171,7 @@
 		viewer.ui = lightbox;
 		viewer.ui = lightbox;
 
-		assert.strictEqual( lightbox.isFullscreen, false, 'Lightbox knows that it\'s not in fullscreen mode' );
+		assert.strictEqual( lightbox.isFullscreen, undefined, "Lightbox knows it's NOT in fullscreen mode after opening" );
 		assert.strictEqual( lightbox.panel.$imageMetadata.is( ':visible' ), true, 'Image metadata is visible' );
 
 		lightbox.buttons.fadeOut = function () {
@@ -183,7 +186,7 @@
 		lightbox.buttons.$fullscreen.trigger( 'click' );
 
 		lightbox.buttons.fadeOut = function () {};
-		assert.ok( lightbox.isFullscreen, 'Lightbox knows that it\'s in fullscreen mode' );
+		assert.ok( lightbox.isFullscreen, "Lightbox knows it's in fullscreen mode after clicking the fullscreenButton 1st time (B)" );
 
 		oldRevealButtonsAndFadeIfNeeded = lightbox.buttons.revealAndFade;
 
@@ -198,10 +201,6 @@
 
 		lightbox.buttons.revealAndFadeIfNeeded = function () {};
 
-		panelBottom = $( '.mw-mmv-post-image' ).position().top + $( '.mw-mmv-post-image' ).height();
-
-		assert.strictEqual( panelBottom, $( window ).height(), 'Image metadata does not extend beyond the viewport' );
-
 		lightbox.buttons.revealAndFade = function ( position ) {
 			assert.ok( true, 'Closing fullscreen triggers a reveal + fade' );
 
@@ -214,7 +213,7 @@
 		panelBottom = $( '.mw-mmv-post-image' ).position().top + $( '.mw-mmv-post-image' ).height();
 
 		assert.ok( panelBottom > $( window ).height(), 'Image metadata extends beyond the viewport' );
-		assert.strictEqual( lightbox.isFullscreen, false, 'Lightbox knows that it\'s not in fullscreen mode' );
+		assert.strictEqual( lightbox.isFullscreen, false, "Lightbox knows it's NOT in fullscreen mode after clicking the fullscreenButton 2nd time (B)" );
 
 		// Unattach lightbox from document
 		lightbox.unattach();

@@ -90,14 +90,6 @@
 
 		this.$buttons.appendTo( this.$container );
 
-		$( document ).on( 'mmv-close', function () {
-			buttons.$nav.addClass( 'disabled' );
-		} );
-
-		this.$close.on( 'click', function () {
-			$container.trigger( $.Event( 'mmv-close' ) );
-		} );
-
 		this.$next.on( 'click', function () {
 			buttons.emit( 'next' );
 		} );
@@ -124,6 +116,10 @@
 	 * Stops the fading animation of the buttons and cancel any opacity value
 	 */
 	CBP.stopFade = function () {
+		if ( this.buttonsFadeTimeout ) {
+			clearTimeout( this.buttonsFadeTimeout );
+		}
+
 		this.$buttons
 			.stop( true )
 			.removeClass( 'hidden' )
@@ -198,10 +194,6 @@
 	 * @param {Object} [mousePosition] Mouse position containing 'x' and 'y' properties
 	 */
 	CBP.revealAndFade = function ( mousePosition ) {
-		if ( this.buttonsFadeTimeout ) {
-			clearTimeout( this.buttonsFadeTimeout );
-		}
-
 		// Stop ongoing animations and make sure the buttons that need to be displayed are displayed
 		this.stopFade();
 
@@ -271,6 +263,8 @@
 	 */
 	CBP.unattach = function () {
 		mw.mmv.ui.Element.prototype.unattach.call( this );
+
+		this.$nav.addClass( 'disabled' );
 
 		this.$download
 			.add( this.$reuse )

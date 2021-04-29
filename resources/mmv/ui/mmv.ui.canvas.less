@@ -1,10 +1,8 @@
 @import '../mmv.mixins.less';
 
 .mw-mmv-image {
-	display: table-cell;
-	width: 100%;
-	height: 100%;
-	vertical-align: middle;
+	margin: auto;  /* Redundant with parent's  align-items: center;  and  justify-content: center; */
+
 	.unselectable;
 
 	&.empty {
@@ -48,6 +46,7 @@
 	display: block;
 	margin-right: auto;
 	margin-left: auto;
+	pointer-events: all;  /* Enable zoom on click for tall images */
 	cursor: pointer;
 	cursor: zoom-in;
 
@@ -79,8 +78,4 @@
 
 .mw-mmv-image.empty img {
 	display: none;
-}
-
-.metadata-panel-is-open .mw-mmv-image-wrapper {
-	cursor: pointer;
 }

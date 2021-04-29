@@ -6,18 +6,18 @@
 @box-shadow-dialog: 0 2px 2px 0 darken( @background-color, 33.3% );
 
 .mw-mmv-dialog {
-	position: fixed;
-	right: 58px;
 	display: none;
+	pointer-events: auto;  /* Enable clicks on the popups */
+	position: fixed;
+	right: 58px + @scrollbar-width;
 	width: @dialog-width;
 	height: @dialog-height;
 	background-color: @background-color;
 	box-shadow: @box-shadow-dialog;
 	border-radius: @border-radius;
-	z-index: 1004;
 
 	.mw-mmv-dialog-down-arrow {
-		right: 48px;
+		right: 48px + @scrollbar-width;
 		background-color: @background-color;
 		width: @arrow-size;
 		height: @arrow-size;

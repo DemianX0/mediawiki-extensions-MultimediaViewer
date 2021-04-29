@@ -20,6 +20,9 @@
 		setup: function () {
 			// animation would keep running, conflict with other tests
 			this.sandbox.stub( $.fn, 'animate' ).returnsThis();
+		},
+		tearDown: function () {
+			$.fn.animate.restore();
 		}
 	} ) );
 
@@ -65,9 +68,9 @@
 		permission.set( text );
 		permission.empty();
 
-		assert.strictEqual( permission.$text.is( ':visible' ), false, 'permission text is not visible' );
-		assert.strictEqual( permission.$html.is( ':visible' ), false, 'permission html is not visible' );
-		assert.strictEqual( permission.$close.is( ':visible' ), false, 'close button is not visible' );
+		assert.strictEqual( permission.isFullSize(), false, 'permission is not full-size' );
+		assert.strictEqual( permission.$text.is( ':empty' ), true, 'permission text is empty' );
+		assert.strictEqual( permission.$html.is( ':empty' ), true, 'permission html is empty' );
 	} );
 
 	QUnit.test( 'grow()', function ( assert ) {

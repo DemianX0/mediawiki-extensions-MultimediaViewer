@@ -2,12 +2,14 @@
 @import 'mmv.mixins.less';
 
 .mw-mmv-wrapper {
+	position: fixed;  /* An overlay is always relative to the viewport (fixed). Blocks mouse scroll events bubbling up to the body. */
+	overflow-y: scroll;  /* Scroll the overlay, not the body */
+	z-index: 1001;  /* .mw-mmv-overlay z-index+1 */
 	top: 0;
 	left: 0;
 	right: 0;
-	z-index: 1001;
-	position: absolute;
-	bottom: auto;
+	bottom: 0;
+	background-color: #000;  /* Hide all the content -- merged from .mw-mmv-overlay */
 
 	.skin-monobook & {
 		font-size: medium;
@@ -16,8 +18,6 @@
 
 .mw-mmv-main {
 	width: 100%;
-	height: auto;
-	position: relative;
 
 	.jq-fullscreened {
 		background-color: #000;
@@ -25,55 +25,69 @@
 }
 
 .mw-mmv-image-wrapper {
-	position: fixed;
+	position: static;  /* Fallback for IE, all versions -- 1.5% usage on 2020-01-01 -- Image will scroll up with metadata. */
+	/* Not using fixed: that would remove the element from the document flow, necessitating another solution to add its height before  .mw-mmv-post-image */
+	/* https://caniuse.com/#feat=css-sticky -- 92% browser support */
+	position: -webkit-sticky;  /* Safari < 3% */
+	position: sticky;  /* Image stays in place while the image metadata rolls up */
 	top: 0;
-	bottom: @metadatabar-above-fold-height;
-	left: 0;
-	right: 0;
-	overflow-y: hidden;
-}
-
-.mw-mmv-image-inner-wrapper {
-	display: table;
-	width: 100%;
-	height: 100%;
+	height: 100vh;  /* Alternative:  height: calc(100vh - @metadatabar-above-fold-height); */
+	overflow-y: hidden;  /* No vertical scrollbar in any case */
 }
 
 .mw-mmv-pre-image {
-	position: absolute;
-	top: 0;
-	height: 32px;
+	position: absolute;  /* Push .mw-mmv-post-image down to bottom of screen */
+	/* height: 32px;  /* Anything that expects this height? */
+	height: 100vh;  /* Add full screen height -- bottom-right button is positioned relative to full height */
 	width: 100%;
-	z-index: 1;
+	/* Remove z-index: 1;  Do not overlay .mw-mmv-image-wrapper, it would disable the horizontal scrollbar. The buttons have z-index: 1003; to overlay the image */
 }
 
 .mw-mmv-post-image {
-	position: absolute;
-	width: 100%;
+	position: relative;  /* Position after .mw-mmv-pre-image and avoid absolute positioned .mw-mmv-pre-image to overflow this area, that would happen with position: static; */
+	margin-top: -@metadatabar-above-fold-height;  /* Move up above-fold height, overlaying .mw-mmv-pre-image. Alternative: calc(100vh - @metadatabar-above-fold-height); */
+	/* top: -86px is not appropriate for this, as it would make the parent element 86px higher */
 	bottom: auto;
+	width: 100%;
 	height: auto;
+	min-height: @metadatabar-above-fold-height + 20px; /* Add the padding of .mw-mmv-about-links (below fold) */
+	z-index: 1005;  /* Overlay the buttons in .mw-mmv-pre-image */
 	color: @color-base;
 	background-color: @panel-above-fold-background-color;
-	min-height: ( @metadatabar-above-fold-inner-height + 1 );
-	z-index: 1005;
+}
+
+.mw-mmv-image-inner-wrapper {
+	position: absolute;  /* To use  bottom: @metadatabar-above-fold-height; */
+	bottom: @metadatabar-above-fold-height;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: flex;  /* Browsers without flex support display the image aligned to the top of the screen. No functionality lost */
+	align-items: center;  /* Center vertically, redundant with margin: auto; on child */
+	justify-content: center;  /* Center horizontally, redundant with margin: auto; on child */
 }
 
 // above-the-fold part of the metadata panel
 .mw-mmv-above-fold {
 	width: 100%;
-	height: @metadatabar-above-fold-inner-height;
 	// min-height is used when the height is changed to auto to display long texts, to make sure the layout
 	// is not messed up wheen the text is short and does not fill the available place. It is also used by
 	// JavaScript to get the "default" height.
 	min-height: @metadatabar-above-fold-inner-height;
-	position: relative;
 	// make sure there is no content in the part which is overlapped by the revealed part of the below-fold content
 	// also used in JavaScript for the height calculations
-	padding-bottom: @metadatabar-below-fold-pushup-height;
+	/* Update: Height calculations removed, pure css now -- T229484 After closing, browser sometimes scrolls to the top of the page... */
+	/* padding-bottom: @metadatabar-below-fold-pushup-height;  /* Remove padding-margin sizing trick from .mw-mmv-image-metadata and .mw-mmv-above-fold */
 
 	.mw-mmv-untruncated & {
 		height: auto;
 	}
+}
+
+.mw-mmv-main > svg {  /* SVG filter, needed to achieve blur in Firefox */
+	position: absolute;  /* Remove from document flow, don't need to add its height */
+	top: 0;
+	left: 0;
 }
 
 // Fullscreen styles
@@ -89,7 +103,7 @@
 .jq-fullscreened {
 	// make the image occupy the whole screen
 	// make sure the panel fits in the screen and does not cause scrollbars to appear
-	.mw-mmv-image-wrapper,
+	.mw-mmv-image-inner-wrapper,
 	.mw-mmv-post-image {
 		bottom: 0;
 	}

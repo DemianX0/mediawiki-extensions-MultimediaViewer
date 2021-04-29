@@ -23,7 +23,8 @@
 	bootstrap = new mw.mmv.MultimediaViewerBootstrap();
 
 	$( function () {
-		bootstrap.setupEventHandlers();
+		// Open mediaviewer after page load if the hash refers to a media file
+		bootstrap.hash( true );
 	} );
 
 	mw.mmv.bootstrap = bootstrap;

@@ -1,5 +1,13 @@
 ( function () {
-	QUnit.module( 'mmv', QUnit.newMwEnvironment() );
+	QUnit.module( 'mmv', QUnit.newMwEnvironment( {
+		setup: function () {
+			// animation would keep running, conflict with other tests
+			this.sandbox.stub( $.fn, 'animate' ).returnsThis();
+		},
+		tearDown: function () {
+			$.fn.animate.restore();
+		}
+	} ) );
 
 	QUnit.test( 'eachPreloadableLightboxIndex()', function ( assert ) {
 		var viewer = mw.mmv.testHelpers.getMultimediaViewer(),
@@ -30,61 +38,94 @@
 	} );
 
 	QUnit.test( 'Hash handling', function ( assert ) {
-		var oldUnattach,
+		var
 			viewer = mw.mmv.testHelpers.getMultimediaViewer(),
-			ui = new mw.mmv.LightboxInterface(),
 			imageSrc = 'Foo bar.jpg',
-			image = { filePageTitle: new mw.Title( 'File:' + imageSrc ) };
+			title = new mw.Title( 'File:' + imageSrc ),
+			image = {
+				filePageTitle: title,
+				thumbnail: new mw.mmv.model.Thumbnail( 'foo', 10, 10 ),
+				extraStatsDeferred: $.Deferred().reject()
+			},
+			thumb = image.thumbnail;
 
-		// animation would keep running, conflict with other tests
-		this.sandbox.stub( $.fn, 'animate' ).returnsThis();
-
-		location.hash = '';
-
+		// Setup 'mmv-close' event handler
 		viewer.setupEventHandlers();
-		oldUnattach = ui.unattach;
 
-		ui.unattach = function () {
-			assert.ok( true, 'Lightbox was unattached' );
-			oldUnattach.call( this );
-		};
+		// Monitor if viewer.ui.unattach() is called.
+		this.sandbox.spy( viewer.ui, 'unattach' );
 
-		viewer.ui = ui;
+		// Don't do ajax requests while testing.
+		this.sandbox.stub( viewer, 'displayPlaceholderThumbnail' );
+		this.sandbox.stub( viewer, 'preloadImagesMetadata' );
+		this.sandbox.stub( viewer, 'preloadThumbnails' );
+		this.sandbox.stub( viewer, 'preloadFullscreenThumbnail' );
+		this.sandbox.stub( viewer, 'loadExtensionPlugins' ).returns( $.Deferred().promise() );
+		this.sandbox.stub( viewer, 'fetchThumbnailForLightboxImage' ).returns( $.Deferred().promise() );
+		this.sandbox.stub( viewer, 'fetchSizeIndependentLightboxInfo' ).returns( $.Deferred().promise() );
+
+		thumb.title = image.filePageTitle;
+		/* eslint-disable no-jquery/no-parse-html-literal */
+		thumb.$thumb = $( '<img src="/thumb/Foo bar.jpg">' );
+		thumb.image = image;
+		thumb.image.index = 1;
+		viewer.thumbs = [
+			{ title: new mw.Title( 'File:Dummy1.jpg' ), image: false },
+			thumb,
+			{ title: new mw.Title( 'File:Dummy3.jpg' ), image: false }
+		];
+
+		assert.strictEqual( viewer.isOpen, undefined, 'Viewer was created in closed state' );
+		assert.strictEqual( viewer.ui.attached, undefined, 'Lightbox was created UNattached' );
+
+		// Closed -> Closed
 		viewer.close();
+		assert.ok( true, 'Viewer survived .close() before being opened' );
+		// viewer.close()  sets  .isOpen = false  even if it was closed. This implementation detail might change, necessitating an update of this test.
+		assert.strictEqual( viewer.isOpen, false, 'Viewer still closed' );
 
-		assert.strictEqual( viewer.isOpen, false, 'Viewer is closed' );
-
-		viewer.loadImageByTitle( image.filePageTitle );
-
-		// Verify that passing an invalid mmv hash when the mmv is open triggers unattach()
+		// Closed -> Closed
 		location.hash = 'Foo';
+		viewer.router.checkRoute();
+		assert.strictEqual( viewer.isOpen, false, 'Viewer is not opened by non-image hash' );
 
-		// Verify that mmv doesn't reset a foreign hash
-		assert.strictEqual( location.hash, '#Foo', 'Foreign hash remains intact' );
-		assert.strictEqual( viewer.isOpen, false, 'Viewer is closed' );
+		// viewer.loadImageByTitle( title );
+		// assert.strictEqual( viewer.isOpen, true, 'Viewer was opened for image' );
+		// assert.strictEqual( viewer.ui.attached, true, 'Lightbox was attached' );
 
-		ui.unattach = function () {
-			assert.ok( false, 'Lightbox was not unattached' );
-			oldUnattach.call( this );
-		};
+		// Opened -> Closed
+		// Verify that passing an invalid mmv hash when the mmv is open triggers unattach()
+		viewer.ui.unattach.called = false;
+		location.hash = 'Foo';
+		viewer.router.checkRoute();
+		assert.strictEqual( viewer.isOpen, false, 'Viewer was closed by non-mmv hash' );
+		assert.strictEqual( viewer.ui.attached, false, 'Lightbox was UNattached' );
+		// assert.strictEqual( unattach.called, true, 'viewer.ui.unattach() was called by non-mmv hash' );
+		// Verify that mmv doesn't reset the non-mmv hash (heading id)
+		assert.strictEqual( location.hash, '#Foo', 'Document heading (non-mmv) hash remains intact' );
 
+		// Closed -> Closed
 		// Verify that passing an invalid mmv hash when the mmv is closed doesn't trigger unattach()
+		viewer.ui.unattach.called = false;
 		location.hash = 'Bar';
-
+		viewer.router.checkRoute();
+		assert.strictEqual( viewer.ui.unattach.called, false, 'viewer.ui.unattach() was NOT called when closed (2)' );
 		// Verify that mmv doesn't reset a foreign hash
-		assert.strictEqual( location.hash, '#Bar', 'Foreign hash remains intact' );
+		assert.strictEqual( location.hash, '#Bar', 'Document heading (non-mmv) hash remains intact (2)' );
 
-		viewer.ui = { images: [ image ], disconnect: function () {} };
+		viewer.ui.unattach.restore();
+		viewer.ui = { images: [ thumb.image ], disconnect: function () {} };
 
 		$( '#qunit-fixture' ).append( '<a class="image"><img src="' + imageSrc + '"></a>' );
 
-		viewer.loadImageByTitle = function ( title ) {
-			assert.strictEqual( title.getPrefixedText(), 'File:' + imageSrc, 'The title matches' );
+		viewer.loadImageByTitle = function ( title2 ) {
+			assert.strictEqual( title2.getPrefixedText(), 'File:' + imageSrc, 'The title matches' );
 		};
 
 		// Open a valid mmv hash link and check that the right image is requested.
 		// imageSrc contains a space without any encoding on purpose
 		location.hash = '/media/File:' + imageSrc;
+		viewer.router.checkRoute();
 
 		// Reset the hash, because for some browsers switching from the non-URI-encoded to
 		// the non-URI-encoded version of the same text with a space will not trigger a hash change
@@ -92,15 +133,25 @@
 
 		// Try again with an URI-encoded imageSrc containing a space
 		location.hash = '/media/File:' + encodeURIComponent( imageSrc );
+		viewer.router.checkRoute();
 
 		// Reset the hash
 		location.hash = '';
 
 		// Try again with a legacy hash
 		location.hash = 'mediaviewer/File:' + imageSrc;
+		viewer.router.checkRoute();
+
+		// The stubs listed only for reference. Viewer goes to the garbage collector, anyway.
+		viewer.displayPlaceholderThumbnail.restore();
+		viewer.preloadImagesMetadata.restore();
+		viewer.preloadThumbnails.restore();
+		viewer.preloadFullscreenThumbnail.restore();
+		viewer.loadExtensionPlugins.restore();
+		viewer.fetchThumbnailForLightboxImage.restore();
+		viewer.fetchSizeIndependentLightboxInfo.restore();
 
 		viewer.cleanupEventHandlers();
-
 		location.hash = '';
 	} );
 
@@ -135,10 +186,12 @@
 					animateMetadataOnce: function () {}
 				},
 				progressBar: {
+					hide: this.sandbox.stub(),
 					animateTo: this.sandbox.stub(),
 					jumpTo: this.sandbox.stub()
 				}
 			},
+			unattach: function () {},
 			open: function () {} };
 
 		viewer.imageProvider.get = function () { return imageDeferred.promise(); };
@@ -186,9 +239,6 @@
 			// custom clock ensures progress handlers execute in correct sequence
 			clock = this.sandbox.useFakeTimers();
 
-		// animation would keep running, conflict with other tests
-		this.sandbox.stub( $.fn, 'animate' ).returnsThis();
-
 		viewer.thumbs = [];
 		viewer.displayPlaceholderThumbnail = function () {};
 		viewer.setImage = function () {};
@@ -217,6 +267,7 @@
 					jumpTo: this.sandbox.stub()
 				}
 			},
+			unattach: function () {},
 			open: function () {},
 			empty: function () {} };
 
@@ -291,9 +342,6 @@
 
 	QUnit.test( 'resetBlurredThumbnailStates', function ( assert ) {
 		var viewer = mw.mmv.testHelpers.getMultimediaViewer();
-
-		// animation would keep running, conflict with other tests
-		this.sandbox.stub( $.fn, 'animate' ).returnsThis();
 
 		assert.strictEqual( viewer.realThumbnailShown, false, 'Real thumbnail state is correct' );
 		assert.strictEqual( viewer.blurredThumbnailShown, false, 'Placeholder state is correct' );
@@ -428,11 +476,13 @@
 					animateMetadataOnce: function () {}
 				},
 				progressBar: {
+					hide: this.sandbox.stub(),
 					animateTo: this.sandbox.stub(),
 					jumpTo: this.sandbox.stub()
 				},
 				empty: function () {}
 			},
+			unattach: function () {},
 			open: function () {},
 			empty: function () {} };
 		viewer.displayRealThumbnail = this.sandbox.stub();
@@ -485,9 +535,6 @@
 			oldScrollTo = $.scrollTo;
 
 		assert.expect( 0 );
-
-		// animation would keep running, conflict with other tests
-		this.sandbox.stub( $.fn, 'animate' ).returnsThis();
 
 		$.scrollTo = function () { return { scrollTop: function () {}, on: function () {}, off: function () {} }; };
 
@@ -690,18 +737,15 @@
 
 	QUnit.test( 'document.title', function ( assert ) {
 		var viewer = mw.mmv.testHelpers.getMultimediaViewer(),
-			bootstrap = new mw.mmv.MultimediaViewerBootstrap(),
 			title = new mw.Title( 'File:This_should_show_up_in_document_title.png' ),
 			oldDocumentTitle = document.title;
 
 		viewer.currentImageFileTitle = title;
-		bootstrap.setupEventHandlers();
 		viewer.setMediaHash();
 
 		assert.ok( document.title.match( title.getNameText() ), 'File name is visible in title' );
 
 		viewer.close();
-		bootstrap.cleanupEventHandlers();
 
 		assert.strictEqual( document.title, oldDocumentTitle, 'Original title restored after viewer is closed' );
 	} );

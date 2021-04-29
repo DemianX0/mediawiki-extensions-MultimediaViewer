@@ -73,7 +73,7 @@
 }
 
 .mw-mmv-close {
-	top: @buttons-offset-right;
+	top: @buttons-offset-top;
 	/* @embed */
 	background-image: url( img/mw-close.svg );
 	height: 23px;
@@ -81,14 +81,14 @@
 
 .mw-mmv-fullscreen {
 	right: @buttons-offset-right - 2px;
-	top: ( @buttons-offset-right + ( @buttons-offset-each-top ) );
+	top: ( @buttons-offset-top + ( @buttons-offset-each-top ) );
 	/* @embed */
 	background-image: url( img/mw-fullscreen-ltr.svg );
 	height: 22px;
 }
 
 .mw-mmv-options-button {
-	top: ( @buttons-offset-right + ( 2 * @buttons-offset-each-top ) );
+	top: ( @buttons-offset-top + ( 2 * @buttons-offset-each-top ) );
 	/* @embed */
 	background-image: url( img/gear.svg );
 	height: 23px;
@@ -105,7 +105,7 @@
 	/* @embed */
 	background-image: url( img/next-ltr.svg );
 	background-position: right;
-	right: @navbutton-width;
+	right: @navbutton-width + @scrollbar-width;
 
 	&:hover {
 		margin-right: -4px;
@@ -125,14 +125,14 @@
 
 .mw-mmv-reuse-button {
 	right: @buttons-offset-right - 2px;
-	bottom: @buttons-offset-right + @metadatabar-above-fold-height + @progress-bar-height;
+	bottom: @buttons-offset-bottom;
 	/* @embed */
 	background-image: url( img/use-ltr.svg );
 	height: 24px;
 }
 
 .mw-mmv-download-button {
-	bottom: @buttons-offset-right + @metadatabar-above-fold-height + @progress-bar-height + 37px;
+	bottom: @buttons-offset-bottom + @buttons-offset-height;
 	/* @embed */
 	background-image: url( img/mw-download.svg );
 	height: 24px;
