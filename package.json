@@ -1,18 +1,22 @@
 {
 	"private": true,
 	"scripts": {
-		"build": "npm -s run minify-svg",
-		"test": "grunt test",
-		"minify-svg": "svgo --config=.svgo.config.js -q -r -f resources/",
-		"doc": "jsduck"
+		"build": "npm -s test && npm -s run doc",
+		"test": "npm -s run lint",
+		"lint": "npm -s run lint:js  &&  npm -s run lint:styles  &&  npm -s run lint:i18n",
+		"lint:fix:js": "npm -s run lint:js -- --fix",
+		"lint:fix:styles": "npm -s run lint:styles -- --fix",
+		"lint:js": "eslint --cache --max-warnings 0  \"**/*.{js,json}\"",
+		"lint:styles": "stylelint  \"resources/**/*.{less,css}\"",
+		"lint:i18n": "banana-checker --requireLowerCase=0  i18n/",
+		"doc": "jsduck",
+		"minify-svg": "svgo --config=.svgo.config.js -q -r -f resources/"
 	},
 	"devDependencies": {
+		"eslint": "7.23.0",
 		"eslint-config-wikimedia": "0.20.0",
-		"grunt": "1.4.0",
 		"grunt-banana-checker": "0.9.0",
-		"grunt-eslint": "23.0.0",
-		"grunt-stylelint": "0.16.0",
-		"stylelint-config-wikimedia": "0.10.3",
-		"svgo": "2.3.0"
+		"stylelint": "13.8.0",
+		"stylelint-config-wikimedia": "0.10.3"
 	}
 }
